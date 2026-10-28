@@ -59,6 +59,23 @@ Ejecutar [00_verificar_entorno.sql](00_verificar_entorno.sql).
 
 Ollama y nginx tienen que estar en marcha cada vez que se trabaje con la parte de IA.
 
+## 5. Modelo de lenguaje para el RAG
+
+Para la parte de RAG hace falta también un modelo que genere texto. He usado uno pequeño, que cabe en cualquier equipo sin tarjeta gráfica potente:
+
+```powershell
+ollama pull hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M
+```
+
+Es Llama 3.2 de 3.000 millones de parámetros en formato GGUF de 4 bits (unos 2 GB). Lo descargo de Hugging Face porque con `ollama pull llama3.2:3b` la descarga se me cortaba: mi red no llegaba al servidor desde el que Ollama sirve sus modelos. Si a ti te funciona el comando corto, el modelo es el mismo y solo hay que cambiar el nombre en `database/12_rag.sql`.
+
+Generar una respuesta tarda más que sacar un embedding, y nginx corta por defecto a los 60 segundos. Por eso `nginx.conf` lleva `proxy_read_timeout 300s`. Si ya tenías nginx en marcha, hay que copiar otra vez el `nginx.conf` a `C:\nginx\conf` y recargarlo:
+
+```powershell
+cd C:\nginx
+.\nginx -s reload
+```
+
 ## Deshacerlo
 
 ```powershell

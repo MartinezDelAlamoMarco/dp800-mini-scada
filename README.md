@@ -354,13 +354,43 @@ También lo probé con las alarmas, buscando las parecidas a un problema nuevo (
 
 No he creado un índice vectorial porque con diez documentos y once alarmas la búsqueda exacta recorre todo en un instante. Para miles de documentos sí compensaría.
 
+## RAG con un modelo local
+
+RAG quiere decir que el modelo no contesta de memoria: primero busco en la base de datos los documentos que tratan de la pregunta y se los doy al modelo para que conteste solo con eso. Es justo lo que hace el procedimiento `usp_PreguntarRAG` (`database/12_rag.sql`):
+
+1. La pregunta se convierte en un vector con el mismo modelo de embeddings de antes.
+2. Con `VECTOR_DISTANCE` (coseno) cojo los dos documentos más cercanos, reutilizando la idea de `usp_BuscarDocumentos`.
+3. Con los textos de esos documentos monto el prompt: "contesta en español, en tres frases como máximo, usando solo estos documentos; si la respuesta no está, di exactamente: No lo encuentro en los manuales."
+4. Llamo a Ollama desde T-SQL con `sp_invoke_external_rest_endpoint` (`/api/chat`, a través del mismo proxy HTTPS) y leo la respuesta del JSON con `JSON_VALUE`.
+
+La generación no se puede hacer con `CREATE EXTERNAL MODEL`, porque SQL Server 2025 solo admite modelos externos de tipo embeddings. Por eso la parte de generar texto va por REST.
+
+**Modelo.** Uso `Llama-3.2-3B-Instruct` cuantizado a Q4_K_M (unos 1,9 GB). Quería uno pequeño que funcione en mi portátil sin GPU y que sepa español. Lo normal era `ollama pull llama3.2:3b`, pero a mí me fallaba la descarga (mi red no llegaba al CDN de Ollama), así que lo bajé de Hugging Face con `ollama pull hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M`, que es el mismo modelo. Pongo temperatura 0 y `seed` 42 para que las respuestas se parezcan lo más posible de una ejecución a otra. Además tuve que subir `proxy_read_timeout` a 300 s en nginx (está en `setup/nginx.conf`), porque con los 60 s por defecto el proxy cortaba la llamada antes de que el modelo acabara. El script entero (ocho respuestas) tarda algo más de un minuto, y la primera vez bastante más porque Ollama tiene que cargar el modelo.
+
+**Con y sin RAG.** El script hace las mismas cuatro preguntas dos veces, una sin documentos (`sin RAG`) y otra con ellos (`con RAG`). Las respuestas salen troceadas en líneas de 110 caracteres para que quepan en la rejilla de SSMS (a veces el corte cae en mitad de una palabra).
+
+| Pregunta | Sin RAG | Con RAG |
+| --- | --- | --- |
+| Cuánto tiempo tengo para atender una alarma de severidad alta | Se inventa "15-30 minutos" | "Máximo de 1 hora", que es lo que dice la guía de severidades |
+| Cada cuánto se calibran los sensores de temperatura y humedad y con qué se comprueban | "Cada 3 meses" y una explicación genérica | Cada seis meses, termómetro de referencia a 20 grados, cámara de sal a 75 % y ajustar el offset si la desviación pasa de 1 grado o 3 puntos |
+| Qué hago si la presión de la bomba del almacén baja de 1 bar | Consejos generales ("verifica que la bomba esté funcionando correctamente") | Parar la bomba para no quemar el motor y las causas habituales: cebado perdido, filtro obstruido, válvula cerrada o junta del eje |
+| Qué hago si hay un incendio en la sala de servidores | Da consejos inventados ("apaga el interruptor de la luz...") | "No lo encuentro en los manuales." |
+
+![Respuestas con y sin RAG, preguntas 1 a 3](docs/images/04_comparacion_1.png)
+
+![Respuestas con y sin RAG, preguntas 2 a 4](docs/images/04_comparacion_2.png)
+
+Lo más claro es la diferencia en las dos primeras: sin RAG el modelo contesta con seguridad números que no vienen de mis manuales (15-30 minutos, cada 3 meses), y con RAG da los de mi documentación. La cuarta es la que más me gusta: ese incendio no está en ningún manual, y con RAG el modelo lo reconoce en vez de inventarse un procedimiento, que en un sistema de alarmas es lo que importa. Sin RAG da un consejo inventado que no se puede fiar.
+
+**Límites.** Es un modelo de 3.000 millones de parámetros: va lento sin GPU y, aunque pongo temperatura 0, no me fío de que la redacción sea idéntica siempre. Además solo ve dos documentos, así que si el buscador falla, la respuesta falla (el RAG no es mejor que la búsqueda que tiene debajo). Por eso el procedimiento devuelve también los documentos que usó (parámetro `@Contexto`), para poder comprobar de dónde sale cada respuesta.
+
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
 - [x] Diseño de la base de datos y T-SQL
 - [x] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
 - [x] Embeddings y búsqueda semántica
-- [ ] RAG con modelo local
+- [x] RAG con modelo local
 - [ ] Documentar el uso de IA durante el desarrollo
 
 <!-- Cambia [ ] por [x] cuando termines cada punto. Al acabar el proyecto puedes borrar esta lista o dejarla marcada. -->
@@ -379,9 +409,6 @@ Los certificados no están en el repositorio: cada uno tiene que generar los suy
 <!--
 SECCIONES QUE VAS A AÑADIR AL README
 Cuando llegues a cada fase, copia el título, escribe la sección con tus palabras y borra el comentario correspondiente. Todas van debajo de "Cómo probarlo" o donde te parezca natural. Las guías de cada paso están en el documento de la guía.
-
-## RAG (Fase 4)
-Qué modelo de lenguaje elegiste y por qué, cómo funciona el flujo (pregunta, documentos recuperados, contexto, respuesta) y la diferencia entre usar el modelo solo y usar RAG, con el ejemplo de la misma pregunta de las dos formas. Capturas: 04_rag_salida.png, 04_sin_rag.png y 04_con_rag.png.
 
 ## Uso de IA durante el desarrollo
 Un resumen corto de para qué usaste IA y un enlace al documento donde van las fichas con prompt, respuesta, qué aceptaste, qué corregiste y cómo lo verificaste.
