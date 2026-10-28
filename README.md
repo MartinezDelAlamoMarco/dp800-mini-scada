@@ -319,8 +319,6 @@ Un detalle: en la captura del plan escribí el id del sensor (11) directamente e
 - [ ] RAG con modelo local
 - [ ] Documentar el uso de IA durante el desarrollo
 
-Las veces que he usado IA y cómo comprobé lo que me daba las voy apuntando en [docs/uso-de-ia.md](docs/uso-de-ia.md).
-
 <!-- Cambia [ ] por [x] cuando termines cada punto. Al acabar el proyecto puedes borrar esta lista o dejarla marcada. -->
 
 ## Cómo probarlo
@@ -348,7 +346,7 @@ Una tabla con las cinco preguntas que probaste, qué salió primero y si acertó
 Qué modelo de lenguaje elegiste y por qué, cómo funciona el flujo (pregunta, documentos recuperados, contexto, respuesta) y la diferencia entre usar el modelo solo y usar RAG, con el ejemplo de la misma pregunta de las dos formas. Capturas: 04_rag_salida.png, 04_sin_rag.png y 04_con_rag.png.
 
 ## Uso de IA durante el desarrollo
-Un resumen corto de para qué usaste IA y un enlace a docs/uso-de-ia.md, donde van las fichas con prompt, respuesta, qué aceptaste, qué corregiste y cómo lo verificaste.
+Un resumen corto de para qué usaste IA y un enlace al documento donde van las fichas con prompt, respuesta, qué aceptaste, qué corregiste y cómo lo verificaste.
 
 ## Ejemplos (Fase 5)
 Dos o tres consultas con su resultado, las que mejor enseñen el proyecto.
