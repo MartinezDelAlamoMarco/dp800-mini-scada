@@ -310,12 +310,56 @@ Un índice no es gratis. Este ocupa unos 16,7 MB, frente a los 117 MB de la tabl
 
 Un detalle: en la captura del plan escribí el id del sensor (11) directamente en la consulta en lugar de usar variables, para que el plan saliera solo y se leyera bien. Con variables y `OPTION (RECOMPILE)`, que es lo que hace el script, el plan es el mismo.
 
+## Embeddings
+
+Un embedding es una lista de números que representa el significado de un texto, de forma que dos textos que hablan de lo mismo quedan con vectores parecidos aunque no compartan las mismas palabras. Los scripts de esta parte son [database/09_documentos.sql](database/09_documentos.sql) (los manuales), [database/10_embeddings.sql](database/10_embeddings.sql) (generar los vectores) y [database/11_busqueda.sql](database/11_busqueda.sql) (la búsqueda).
+
+- **Modelo:** `nomic-embed-text`, que corre en mi equipo con Ollama. SQL Server lo llama a través del modelo externo `ModeloEmbeddings` que creé en la parte de entorno (con el proxy nginx por delante, porque SQL Server solo habla HTTPS).
+- **Qué se convierte en vector:** la descripción de cada alarma (`Alarmas.Descripcion`) y el título junto con el contenido de cada manual (`Documentos.Titulo` y `Documentos.Contenido`). Le pongo el título delante del contenido para que también cuente a la hora de buscar.
+- **Dimensión:** 768, que es lo que devuelve ese modelo. Por eso las columnas son `VECTOR(768)`.
+- **Cómo se generan:** con la función `AI_GENERATE_EMBEDDINGS` dentro de un `UPDATE`, así que no hace falta ningún programa externo: lo hace SQL Server llamando a Ollama.
+- **Cómo se guardan:** en las columnas `Embedding` de `Alarmas` y de `Documentos`, que son de tipo `VECTOR(768)`.
+
+```sql
+UPDATE dbo.Documentos
+SET Embedding = AI_GENERATE_EMBEDDINGS(CONCAT(Titulo, N'. ', Contenido) USE MODEL ModeloEmbeddings)
+WHERE Embedding IS NULL;
+```
+
+Los manuales los escribí yo para el proyecto: son diez documentos cortos (procedimientos, manuales y guías) sobre lo que haría un técnico ante cada tipo de alarma. Generar los 21 embeddings (11 alarmas y 10 documentos) tardó unos 10 segundos. La comprobación final cuenta las filas con embedding y sus dimensiones:
+
+![Generación de embeddings](docs/images/03_embeddings.png)
+
+## Búsqueda semántica
+
+Para buscar, la pregunta se convierte en un vector con el mismo modelo y se ordenan los documentos por su distancia a ese vector con `VECTOR_DISTANCE`. Lo he dejado en el procedimiento `usp_BuscarDocumentos`, que luego me servirá para el RAG.
+
+Uso la distancia **coseno**. Compara hacia dónde apuntan los dos vectores y no lo largos que son, que es lo que interesa con textos: un manual largo y una pregunta corta pueden hablar de lo mismo, y la longitud del texto no debería cambiar cuánto se parecen. Con la distancia euclídea, un texto largo y uno corto del mismo tema podrían salir más lejos solo por el tamaño. Cuanto más cerca de 0, más parecido.
+
+Probé cinco preguntas escritas como las diría un técnico, sin copiar las palabras de los manuales:
+
+| Pregunta | Primer resultado | Distancia | Acierta |
+| --- | --- | --- | --- |
+| el sensor de CO2 marca siempre el mismo valor | Procedimiento: sensor de CO2 con lecturas planas | 0,1219 | Sí |
+| se fue la luz y el aire de la sala de los servidores no vuelve a arrancar | Procedimiento: corte de luz y arranque de equipos | 0,2830 | Sí, y el manual de refrigeración queda segundo (0,3368) |
+| hay mucha humedad en el almacen, creo que hay agua | Guía: humedad alta en el almacén | 0,1590 | Sí |
+| la bomba no da presion y casi no sale agua | Manual: bomba de agua del almacén, caída de presión | 0,2756 | Sí |
+| cuanto tiempo tengo para atender una alarma critica | Guía: severidad de las alarmas y tiempos de respuesta | 0,2054 | Sí |
+
+![Resultados de la búsqueda semántica](docs/images/03_busqueda.png)
+
+Acierta en las cinco, pero no todo es tan limpio. En la segunda pregunta mezclo dos cosas (el corte de luz y el aire de la sala) y salen los dos documentos que tratan de ellas, pero el de la refrigeración, que es el que da los pasos para rearmar el aire, queda segundo. Para un humano son igual de útiles. También se nota que `Procedimiento: temperatura baja en el almacen` aparece como segundo resultado en tres de las cinco preguntas, y solo una de ellas habla del almacén. Con solo diez documentos, uno bastante genérico se queda como relleno cerca de casi todo. Con más documentos esto se notaría menos.
+
+También lo probé con las alarmas, buscando las parecidas a un problema nuevo (`usp_BuscarAlarmasSimilares`). Para "el servidor se calienta demasiado" salen primero las dos alarmas de la sala de servidores (la 3 y la 4), que es lo esperado. La tercera, de humedad, ya no tiene mucho que ver y está a más distancia.
+
+No he creado un índice vectorial porque con diez documentos y once alarmas la búsqueda exacta recorre todo en un instante. Para miles de documentos sí compensaría.
+
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
 - [x] Diseño de la base de datos y T-SQL
 - [x] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
-- [ ] Embeddings y búsqueda semántica
+- [x] Embeddings y búsqueda semántica
 - [ ] RAG con modelo local
 - [ ] Documentar el uso de IA durante el desarrollo
 
@@ -335,12 +379,6 @@ Los certificados no están en el repositorio: cada uno tiene que generar los suy
 <!--
 SECCIONES QUE VAS A AÑADIR AL README
 Cuando llegues a cada fase, copia el título, escribe la sección con tus palabras y borra el comentario correspondiente. Todas van debajo de "Cómo probarlo" o donde te parezca natural. Las guías de cada paso están en el documento de la guía.
-
-## Embeddings (Fase 3)
-El enunciado pide cinco cosas: qué modelo usas, qué columnas se convierten en vector, qué dimensión tiene, cómo se generan y cómo se guardan en SQL Server. Cuéntalo con tus palabras. Captura: 03_embeddings.png.
-
-## Búsqueda semántica (Fase 3)
-Una tabla con las cinco preguntas que probaste, qué salió primero y si acertó, incluidos los fallos. Y por qué usas la métrica coseno, que el enunciado exige justificar. Capturas: 03_ranking_1.png y siguientes.
 
 ## RAG (Fase 4)
 Qué modelo de lenguaje elegiste y por qué, cómo funciona el flujo (pregunta, documentos recuperados, contexto, respuesta) y la diferencia entre usar el modelo solo y usar RAG, con el ejemplo de la misma pregunta de las dos formas. Capturas: 04_rag_salida.png, 04_sin_rag.png y 04_con_rag.png.
