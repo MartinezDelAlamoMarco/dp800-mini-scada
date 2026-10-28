@@ -80,20 +80,42 @@ Y el primer vector generado con `AI_GENERATE_EMBEDDINGS` a partir de una frase d
 
 ## Base de datos
 
-Este es el diseño previsto, y puede cambiar al implementarlo:
+La base de datos se llama `MiniScada` y tiene 8 tablas. El script que las crea está en [database/01_tablas.sql](database/01_tablas.sql) y se puede ejecutar entero las veces que haga falta, porque borra y vuelve a crear las tablas.
+
+![Diagrama de la base de datos](docs/images/01_diagrama_bd.png)
 
 | Tabla | Para qué sirve |
 | --- | --- |
-| Zonas | Áreas o edificios donde están los equipos |
-| Dispositivos | Nodos IoT de cada zona |
-| Sensores | Sensores de cada dispositivo y qué miden |
-| Lecturas | Histórico de mediciones, la tabla grande |
-| Alarmas | Eventos anómalos de un sensor, con su embedding |
-| Incidencias | Cómo se resolvió cada alarma |
+| Zonas | Áreas o edificios donde están los equipos. Guarda un email de contacto, que más adelante enmascaro |
+| Dispositivos | Nodos IoT de cada zona, con su modelo y su estado |
+| Sensores | Sensores de cada dispositivo: qué miden, en qué unidad y su rango normal (mínimo y máximo) |
+| Lecturas | Histórico de mediciones: sensor, fecha, valor y el mensaje JSON original. Es la tabla grande |
+| Alarmas | Eventos anómalos de un sensor, con severidad, estado y su embedding |
+| Incidencias | Cómo se resolvió cada alarma: responsable, causa y solución |
 | Documentos | Manuales y procedimientos, con su embedding |
 | UsuariosZona | Qué zonas ve cada usuario (Row-Level Security) |
 
-<!-- FASE 1: cuando termines las tablas, ajusta esta tabla a cómo quedaron de verdad y cuenta con tus palabras por qué las diseñaste así y cómo se relacionan. Si quieres, añade la imagen del diagrama (docs/images/01_diagrama_bd.png). Cuenta también cómo simulas los datos y qué anomalías metes a propósito. -->
+### Por qué la diseñé así
+
+Lo organicé como lo estaría en un edificio de verdad. Una zona tiene varios dispositivos, un dispositivo tiene varios sensores, y cada sensor genera muchas lecturas y puede disparar alarmas. Por eso las cuatro primeras tablas forman una cadena de Zonas a Dispositivos a Sensores, y de ahí salen Lecturas y Alarmas. Después, cada alarma puede tener una incidencia donde se anota qué la causó y cómo se arregló. Esas incidencias son las que luego quiero encontrar por significado cuando aparezca una alarma parecida.
+
+En Lecturas guardo solo lo básico (sensor, fecha, valor y el JSON original del dispositivo) porque es la tabla que va a tener más de 500.000 filas, y quiero que sea ligera. De momento no tiene ningún índice aparte de la clave primaria, a propósito: así en la parte de optimización puedo medir cómo era la consulta antes y cómo mejora después de crearlo.
+
+Documentos no está unida a ninguna otra tabla porque son manuales y procedimientos generales de los equipos, que valen para cualquier zona. UsuariosZona sirve para la seguridad por filas: dice qué zonas puede ver cada usuario.
+
+Las columnas `Embedding` de Alarmas y Documentos son de tipo `VECTOR(768)`, porque `nomic-embed-text` genera vectores de 768 dimensiones. Ahora están vacías (aceptan `NULL`) y las relleno en la fase de embeddings.
+
+### Restricciones
+
+Para que no entren datos inválidos uso claves foráneas y restricciones `CHECK`. Por ejemplo:
+
+- En Sensores, el valor mínimo normal tiene que ser menor que el máximo.
+- En Incidencias, la fecha de cierre no puede ser anterior a la de apertura.
+- La severidad de una alarma solo puede ser baja, media, alta o crítica, y el estado de un dispositivo o de una alarma solo puede tomar los valores previstos.
+- El campo `PayloadJson` de Lecturas tiene que ser un JSON válido.
+- Dentro de una zona no puede haber dos dispositivos con el mismo nombre, y dentro de un dispositivo tampoco dos sensores con el mismo nombre.
+
+<!-- FASE 1 (datos): cuando hagamos el script de datos, cuenta aqui como simulas las lecturas y que anomalias metes a proposito. -->
 
 ## Cómo voy
 
