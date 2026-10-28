@@ -5,8 +5,6 @@ Mini proyecto de Big Data para practicar lo de la certificación DP-800 (SQL AI 
 Elegí este tema ya que trabajé en una empresa dedicada al sector del IoT, concretamente en diseños y remodelaciones de edificios inteligentes. Tengo experiencia creando y utilizando sistemas SCADA.
 Lo que espero aprender de este proyecto es a integrar inteligencia artificial para detectar incidencias, basándose en anteriores sucesos de ese mismo sistema, y además poder consultar esa información en lenguaje natural.
 
-Todavía está en desarrollo y voy actualizando este README según avanzo.
-
 ## De qué va
 
 Una base de datos en SQL Server 2025 que guarda lecturas de sensores, alarmas, incidencias y manuales de equipos IoT, como haría un SCADA pequeño. Los datos los simulo con un script.
@@ -16,17 +14,9 @@ Sobre eso quiero poder preguntar en lenguaje natural, por ejemplo "el sensor de 
 
 ## Cómo lo planteo
 
-```
-Usuario -> procedimientos T-SQL -> SQL Server 2025 (tablas, vectores, seguridad)
-                                        |
-                                      HTTPS
-                                        |
-                              nginx (proxy local) -> Ollama
-```
+![Arquitectura](docs/images/arquitectura.png)
 
-SQL Server solo llama a servicios HTTPS y Ollama habla HTTP, por eso hay un proxy en medio. Cuando tenga el diagrama definitivo lo cambiaré por una imagen.
-
-<!-- FASE 5: guarda el diagrama como docs/images/arquitectura.png y sustituye el bloque de arriba por la línea ![Arquitectura](docs/images/arquitectura.png). -->
+Los procedimientos T-SQL son la puerta de entrada: guardan y consultan los datos de `MiniScada` y, cuando hace falta un embedding o una respuesta del modelo, llaman por HTTPS al proxy local. SQL Server solo llama a servicios HTTPS y Ollama habla HTTP, por eso hay un nginx en medio. Ollama sirve dos modelos: `nomic-embed-text` para los embeddings y Llama 3.2 3B para redactar las respuestas del RAG.
 
 ## Tecnologías
 
@@ -34,9 +24,24 @@ Todo funciona en local, en mi portátil con Windows 11:
 
 - SQL Server 2025 (RTM, versión 17.0.1000.7) y T-SQL
 - SQL Server Management Studio (SSMS) 22.10.2
-- Ollama 0.40.9, con el modelo de embeddings `nomic-embed-text` (vectores de 768 dimensiones) y un LLM pequeño para el RAG
+- Ollama 0.40.9, con el modelo de embeddings `nomic-embed-text` (vectores de 768 dimensiones) y Llama 3.2 3B (cuantizado a Q4_K_M) como modelo de lenguaje para el RAG
 - nginx 1.30.6 y mkcert 1.4.4 para el proxy HTTPS local
 - Git y GitHub
+
+## Funcionalidades DP-800 implementadas
+
+Nivel elegido: **3** (avanzado). Esto es lo que cubre cada bloque del enunciado y dónde está:
+
+- ✓ **Bloque A, diseño de la base de datos:** 8 tablas con claves, restricciones e índices, función, vistas, procedimientos, trigger y consultas con CTE, window functions y JSON (`database/01` a `05`).
+- ✓ **Bloque B, desarrollo asistido por IA:** uso de Claude con prompt, respuesta, qué acepté, qué corregí y cómo lo verifiqué (apartado "Uso de IA durante el desarrollo").
+- ✓ **Bloque C, seguridad:** roles, seguridad por filas, enmascarado de datos y DENY, con pruebas por usuario (`database/06` y `07`).
+- ✓ **Bloque D, optimización:** plan de ejecución y logical reads antes y después de un índice compuesto (`database/08`).
+- ✓ **Bloque E, modelos y embeddings:** modelo externo en Ollama, `VECTOR(768)` y `AI_GENERATE_EMBEDDINGS` (`database/09` y `10`).
+- ✓ **Bloque F, búsqueda inteligente:** búsqueda vectorial con distancia coseno y ranking (`database/11`).
+- ✓ **Bloque G, RAG con modelo local:** pregunta, documentos recuperados, contexto y respuesta (`database/12` y `13`).
+- ✓ **Pruebas:** 18 pruebas automáticas en `tests/tests.sql`.
+
+Para reproducirlo desde cero, ve directamente a la [Instalación paso a paso](#instalación-paso-a-paso-desde-cero).
 
 ## Montar el entorno
 
@@ -195,7 +200,7 @@ Las consultas están en [database/05_consultas_avanzadas.sql](database/05_consul
 
 ### Pruebas
 
-[tests/tests.sql](tests/tests.sql) comprueba de una vez que todo lo anterior está en su sitio: las 8 tablas, las columnas de tipo vector, la función, las vistas, los procedimientos y el trigger, que hay más de 500.000 lecturas, que el `CHECK` rechaza un rango al revés, que el procedimiento da error con un sensor que no existe y que el trigger cierra la alarma. Con la seguridad y la optimización añade que la política por filas está activa, que el administrador ve 11 alarmas y el técnico de la sala de servidores 3, que este último no puede leer la tabla `Lecturas`, que el email sale tapado para el técnico y que existe el índice. Al final sale una tabla con OK o FALLO por cada prueba. Las que tocan datos se hacen dentro de una transacción que se deshace, y lo iré ampliando con cada fase (ahora son 14 pruebas).
+[tests/tests.sql](tests/tests.sql) comprueba de una vez que todo lo anterior está en su sitio: las 8 tablas, las columnas de tipo vector, la función, las vistas, los procedimientos y el trigger, que hay más de 500.000 lecturas, que el `CHECK` rechaza un rango al revés, que el procedimiento da error con un sensor que no existe y que el trigger cierra la alarma. Con la seguridad y la optimización añade que la política por filas está activa, que el administrador ve 11 alarmas y el técnico de la sala de servidores 3, que este último no puede leer la tabla `Lecturas`, que el email sale tapado para el técnico y que existe el índice. Con los embeddings y el RAG comprueba que los 10 documentos y las 11 alarmas tienen su vector, que existen los procedimientos de búsqueda y de RAG, que la pregunta del sensor de CO2 plano devuelve su procedimiento y que la alarma más parecida a un servidor que se calienta es de la sala de servidores. Al final sale una tabla con OK o FALLO por cada prueba. Las que tocan datos se hacen dentro de una transacción que se deshace, y he ido ampliándolo con cada fase. Ahora son 18 pruebas. Las de los embeddings llaman a Ollama, así que tiene que estar en marcha.
 
 ![Resultado de las pruebas](docs/images/01_tests.png)
 
@@ -376,6 +381,12 @@ La generación no se puede hacer con `CREATE EXTERNAL MODEL`, porque SQL Server 
 | Qué hago si la presión de la bomba del almacén baja de 1 bar | Consejos generales ("verifica que la bomba esté funcionando correctamente") | Parar la bomba para no quemar el motor y las causas habituales: cebado perdido, filtro obstruido, válvula cerrada o junta del eje |
 | Qué hago si hay un incendio en la sala de servidores | Da consejos inventados ("apaga el interruptor de la luz...") | "No lo encuentro en los manuales." |
 
+Para ver el RAG paso a paso con una sola pregunta está [database/13_rag_demo.sql](database/13_rag_demo.sql). Enseña la pregunta, los documentos que recupera con su distancia, el contexto exacto que recibe el modelo y la respuesta. Con "el sensor de CO2 de la oficina marca siempre lo mismo, que hago" recupera el procedimiento del sensor de CO2 plano (distancia 0,1309) y, en segundo lugar, el manual de calibración (0,3137). El modelo contesta con los pasos del primero: comparar con el otro sensor de CO2 de la planta, revisar la entrada de aire y, si sigue sin moverse, sustituir el sensor y anotar el número de serie. Tarda unos 23 segundos.
+
+![Demo del RAG paso a paso](docs/images/04_rag_demo.png)
+
+Y la comparación de las cuatro preguntas sin y con RAG:
+
 ![Respuestas con y sin RAG, preguntas 1 a 3](docs/images/04_comparacion_1.png)
 
 ![Respuestas con y sin RAG, preguntas 2 a 4](docs/images/04_comparacion_2.png)
@@ -384,38 +395,183 @@ Lo más claro es la diferencia en las dos primeras: sin RAG el modelo contesta c
 
 **Límites.** Es un modelo de 3.000 millones de parámetros: va lento sin GPU y, aunque pongo temperatura 0, no me fío de que la redacción sea idéntica siempre. Además solo ve dos documentos, así que si el buscador falla, la respuesta falla (el RAG no es mejor que la búsqueda que tiene debajo). Por eso el procedimiento devuelve también los documentos que usó (parámetro `@Contexto`), para poder comprobar de dónde sale cada respuesta.
 
-## Cómo voy
+## Ejemplos
 
-- [x] Comprobar que SQL Server puede generar embeddings con Ollama
-- [x] Diseño de la base de datos y T-SQL
-- [x] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
-- [x] Embeddings y búsqueda semántica
-- [x] RAG con modelo local
-- [ ] Documentar el uso de IA durante el desarrollo
+Tres consultas que, para mí, resumen el proyecto. Los resultados son los de mi equipo y salen igual al repetirlas.
 
-<!-- Cambia [ ] por [x] cuando termines cada punto. Al acabar el proyecto puedes borrar esta lista o dejarla marcada. -->
+**1. Buscar por significado.** El técnico escribe lo que ve y no el título del manual:
 
-## Cómo probarlo
+```sql
+EXEC dbo.usp_BuscarDocumentos @Pregunta = N'el sensor de CO2 marca siempre el mismo valor', @Cantidad = 3;
+```
 
-De momento solo está la comprobación del entorno:
+Devuelve primero "Procedimiento: sensor de CO2 con lecturas planas", con una distancia coseno de 0,1219. La palabra "planas" no está en la pregunta.
 
-1. Instalar Ollama y montar el proxy siguiendo [setup/ollama-https-proxy.md](setup/ollama-https-proxy.md).
-2. Ejecutar [setup/00_verificar_entorno.sql](setup/00_verificar_entorno.sql) en SSMS, bloque a bloque.
+**2. Cada usuario ve lo suyo.** La misma consulta con dos usuarios distintos:
 
-Los certificados no están en el repositorio: cada uno tiene que generar los suyos con mkcert.
+```sql
+EXECUTE AS USER = 'admin_scada';
+SELECT COUNT(*) FROM dbo.Alarmas;   -- 11
+REVERT;
 
-<!-- FASE 5: sustituye esto por la instalación completa paso a paso: el orden de los scripts de database/ y ai/, qué hay que tener en marcha y cuánto tarda. Hazlo después de la prueba de reproducibilidad, clonando el repo en otra carpeta, para que sea el orden real. -->
+EXECUTE AS USER = 'tecnico_cpd';
+SELECT COUNT(*) FROM dbo.Alarmas;   -- 3, solo las de la sala de servidores
+REVERT;
+```
 
-<!--
-SECCIONES QUE VAS A AÑADIR AL README
-Cuando llegues a cada fase, copia el título, escribe la sección con tus palabras y borra el comentario correspondiente. Todas van debajo de "Cómo probarlo" o donde te parezca natural. Las guías de cada paso están en el documento de la guía.
+**3. Un índice que se nota.** La consulta de la media de CO2 de un sensor pasó de un `Clustered Index Scan` con 15.771 lecturas lógicas y 241 ms a un `Index Seek` con 13 lecturas lógicas y 4 ms, con el mismo resultado (619,98 ppm).
+
+## Informe y presentación
+
+El informe de 10 páginas con las capturas de cada parte está en [docs/informe.pdf](docs/informe.pdf), y la presentación de 8 diapositivas en [presentation/dp800-project.pptx](presentation/dp800-project.pptx).
+
+## Conclusiones
+
+Lo que más me ha enseñado el proyecto es que la parte de IA, con SQL Server 2025, es sorprendentemente corta de escribir: un `UPDATE` con `AI_GENERATE_EMBEDDINGS` para rellenar los vectores y un `ORDER BY VECTOR_DISTANCE` para buscar. Lo difícil fue todo lo de alrededor. Conseguir que SQL Server hablara con Ollama fue lo que más tiempo me llevó (HTTPS, certificados de mkcert que el servicio no veía, nginx), y más tarde la descarga del modelo, que no funcionaba con el comando normal y tuve que bajar de Hugging Face, y el tiempo de espera del proxy, que cortaba la generación a los 60 segundos.
+
+También me quedo con lo del RAG. Antes de hacerlo pensaba que sería un detalle de calidad, pero la diferencia es enorme: sin documentos el modelo se inventa plazos y periodos con total seguridad, y con ellos contesta lo que dicen mis manuales y, si no lo encuentra, lo dice. En un sistema de alarmas eso es lo que más me importa.
+
+Los errores de T-SQL fueron pequeños pero me enseñaron cosas: una columna `IDENTITY` en una tabla temporal que no se reiniciaba con `DELETE` (con `TRUNCATE TABLE` sí), y `GENERATE_SERIES` que exige que los dos extremos sean del mismo tipo y `LEN` devuelve `BIGINT`.
+
+Lo que mejoraría:
+
+- Probar más preguntas y más documentos. Con diez documentos todo acierta, pero no sé cómo se comportaría la búsqueda con cientos de manuales, y entonces sí haría falta un índice vectorial.
+- Usar una máquina con GPU. El modelo de 3.000 millones de parámetros va bien para esto, pero tarda segundos por respuesta, y con una GPU podría probar uno más grande.
+- Recibir los datos de verdad desde los sensores (por ejemplo por MQTT, como en un SCADA real) en vez de simularlos con un script.
+- Guardar en una tabla cada pregunta con sus documentos y su respuesta, para poder revisar después si el RAG se equivoca.
 
 ## Uso de IA durante el desarrollo
-Un resumen corto de para qué usaste IA y un enlace al documento donde van las fichas con prompt, respuesta, qué aceptaste, qué corregiste y cómo lo verificaste.
 
-## Ejemplos (Fase 5)
-Dos o tres consultas con su resultado, las que mejor enseñen el proyecto.
+He usado Claude como guía durante todo el proyecto: para ordenar las fases, para que me escribiera los scripts de cada una (tablas, generador de datos, procedimientos, seguridad, embeddings, RAG), para redactar los diez documentos de prueba y para resolver los errores que me fueron saliendo. Todo lo que me dio lo probé en mi SQL Server antes de aceptarlo, y varias veces tuvo que corregirse (los fallos de `IDENTITY` y de `GENERATE_SERIES` que cuento arriba, el modelo que no se descargaba, el tiempo de espera de nginx). Por cada parte importante anoté mis dudas, qué acepté, qué hubo que corregir y cómo lo verifiqué.
 
-## Conclusiones (Fase 5)
-Qué has aprendido, qué problemas tuviste, cómo los resolviste y qué mejorarías.
--->
+## Instalación paso a paso (desde cero)
+
+Esta guía es para reproducir el proyecto en un Windows 11 sin nada instalado, sin conocimientos previos. Lleva más o menos una hora, casi toda en descargas e instalaciones (los dos modelos de Ollama pesan unos 2,5 GB en total). No hace falta tarjeta gráfica. Cada paso termina con lo que tienes que ver para saber que ha ido bien.
+
+### Qué hay que instalar
+
+| Programa | Para qué | Dónde |
+| --- | --- | --- |
+| Git | Descargar el repositorio | `winget install Git.Git` en PowerShell, o git-scm.com |
+| SQL Server 2025, edición Developer (gratuita) | La base de datos | microsoft.com/sql-server/sql-server-downloads |
+| SQL Server Management Studio (SSMS) 22 | Ejecutar los scripts y ver los resultados | aka.ms/ssmsfullsetup |
+| Ollama | Ejecutar los modelos en local | ollama.com/download |
+| nginx para Windows | Proxy HTTPS entre SQL Server y Ollama | nginx.org/en/download.html (versión estable, archivo zip) |
+| mkcert | Certificado HTTPS local | `winget install FiloSottile.mkcert` en PowerShell |
+
+Al instalar SQL Server vale la instalación básica, con la instancia por defecto y la autenticación de Windows. Con eso el servidor se llama `localhost`.
+
+### Paso 1. Descargar el proyecto
+
+En PowerShell:
+
+```powershell
+git clone https://github.com/MartinezDelAlamoMarco/dp800-mini-scada.git
+cd dp800-mini-scada
+```
+
+Todas las rutas de esta guía (`database\...`, `setup\...`, `tests\...`) son relativas a esta carpeta.
+
+### Paso 2. Descargar los dos modelos de Ollama
+
+Abre Ollama desde el menú Inicio (se queda en la bandeja del sistema, junto al reloj) y en PowerShell escribe:
+
+```powershell
+ollama pull nomic-embed-text
+ollama pull hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M
+```
+
+El primero convierte textos en vectores y el segundo redacta las respuestas del RAG. Para comprobarlo escribe `ollama list`: tienen que salir los dos.
+
+### Paso 3. Certificado HTTPS local
+
+SQL Server solo llama a servicios HTTPS y Ollama habla HTTP, así que hay que poner un proxy en medio y darle un certificado. En PowerShell **como administrador** (clic derecho en PowerShell, "Ejecutar como administrador"):
+
+```powershell
+mkcert -install
+mkdir C:\certs
+cd C:\certs
+mkcert localhost 127.0.0.1 ::1
+certutil -addstore -f "ROOT" "$(mkcert -CAROOT)\rootCA.pem"
+```
+
+Si `mkcert` no se reconoce, cierra PowerShell y ábrelo otra vez. Windows te preguntará si confías en el certificado: di que sí. Al terminar tienen que existir `C:\certs\localhost+2.pem` y `C:\certs\localhost+2-key.pem`.
+
+Después reinicia el servicio de SQL Server para que use ese certificado: pulsa Windows + R, escribe `services.msc`, busca "SQL Server (MSSQLSERVER)", clic derecho y Reiniciar.
+
+### Paso 4. nginx
+
+1. Descomprime el zip de nginx de forma que quede `C:\nginx\nginx.exe`.
+2. Copia la configuración del proyecto. Desde la carpeta del repositorio: `copy setup\nginx.conf C:\nginx\conf\nginx.conf` (di que sí a sobrescribir).
+3. Arranca nginx:
+
+```powershell
+cd C:\nginx
+start .\nginx
+curl.exe --ssl-no-revoke https://localhost:11435/api/tags
+```
+
+La última línea tiene que devolver un JSON con los dos modelos que descargaste. Si da error de conexión, nginx no está en marcha; si se queja del certificado, repite el paso 3. Para pararlo: `.\nginx -s stop`.
+
+### Paso 5. Conectar SSMS y preparar SQL Server
+
+1. Abre SSMS. En la ventana de conexión pon como nombre del servidor `localhost`, autenticación "Autenticación de Windows" y marca "Confiar en el certificado del servidor". Pulsa Conectar.
+2. Abre el primer script: Archivo, Abrir, Archivo, y elige `setup\00_verificar_entorno.sql` del repositorio.
+3. Pulsa **F5** (o el botón Ejecutar). Activa las llamadas REST, comprueba que llegan al proxy, crea la base de datos `MiniScada` y el modelo externo y genera un vector de prueba. Al final, en la pestaña Resultados, tiene que salir una fila con un vector (una cadena de números entre corchetes). Si sale el error 31608, nginx o Ollama no están en marcha.
+
+Todos los scripts siguientes se abren y ejecutan igual: Archivo, Abrir, Archivo, F5. Mira siempre la pestaña **Resultados** y la pestaña **Mensajes**: no deben aparecer mensajes en rojo.
+
+### Paso 6. Crear la base de datos y todo lo demás
+
+Ejecuta con F5, uno detrás de otro y en este orden, los scripts de `database\`:
+
+| Script | Qué hace |
+| --- | --- |
+| `01_tablas` | Crea las 8 tablas, con sus claves y restricciones |
+| `02_datos` | Genera unas 518.000 lecturas, alarmas, incidencias y zonas de prueba |
+| `03_vistas_funcion` | Crea la función y las vistas |
+| `04_procedimientos_trigger` | Crea los procedimientos y el trigger |
+| `05_consultas_avanzadas` | Consultas con CTE, window functions y JSON |
+| `06_seguridad` | Crea roles y usuarios, seguridad por filas y enmascarado de datos |
+| `07_seguridad_pruebas` | Muestra que cada usuario ve datos distintos |
+| `08_optimizacion` | Mide una consulta antes y después de crear un índice |
+| `09_documentos` | Carga los 10 manuales de ejemplo |
+| `10_embeddings` | Convierte alarmas y manuales en vectores (necesita Ollama y nginx) |
+| `11_busqueda` | Búsqueda semántica: ranking de documentos por significado |
+| `12_rag` | Crea el procedimiento del RAG y compara cuatro preguntas con y sin RAG (tarda unos 2 minutos) |
+
+El `13_rag_demo` es opcional y enseña el RAG paso a paso con una pregunta: la pregunta, los documentos recuperados con su distancia, el contexto que recibe el modelo y la respuesta. Para probar tus propias preguntas, cambia el texto de la línea `DECLARE @Pregunta` (lo que va entre comillas) y vuelve a pulsar F5.
+
+### Paso 7. Comprobar que todo está bien
+
+Abre `tests\tests.sql` y pulsa F5. Al final aparece una tabla con una fila por prueba: tienen que salir **18 en OK y ninguna en FALLO**. Las pruebas que tocan datos se deshacen solas, así que se pueden repetir.
+
+### Cada vez que vuelvas a trabajar con el proyecto
+
+Antes de ejecutar nada de la parte de IA (`10` en adelante), tienen que estar abiertos Ollama y nginx (`cd C:\nginx` y `start .\nginx`). Con SQL Server en marcha, ya está.
+
+### Si algo falla
+
+| Síntoma | Causa probable |
+| --- | --- |
+| Error 31608 o `HRESULT: 0x80072efd` | nginx u Ollama no están en marcha |
+| Error de certificado en SQL Server o curl | Falta importar el certificado (paso 3) o reiniciar el servicio de SQL Server |
+| `mkcert` o `nginx` no se reconocen | Cierra y abre PowerShell; nginx se lanza con `.\nginx` |
+| El RAG se corta a los 60 segundos | nginx no tiene el `nginx.conf` del proyecto: repite el paso 4 y recarga con `.\nginx -s reload` |
+| `ollama pull llama3.2:3b` no descarga | Usa el nombre de `hf.co/...` de este paso 2 |
+
+Todos los scripts se pueden repetir: `01_tablas` borra y vuelve a crear las tablas (y con ellas todos los datos), y los datos de `02_datos` salen siempre idénticos. Más detalle de cómo monté el proxy y los problemas que tuve está en [setup/ollama-https-proxy.md](setup/ollama-https-proxy.md).
+
+### Cuánto tarda
+
+Antes de dar esto por bueno lo probé borrando la base de datos `MiniScada` y ejecutando todo en ese orden. Salió sin ningún error y las 18 pruebas pasaron. Tardó unos 2 minutos y 6 segundos en total:
+
+| Paso | Tiempo aproximado |
+| --- | --- |
+| `00_verificar_entorno` | 2 segundos |
+| `01` a `08` (tablas, 518.000 lecturas, T-SQL, seguridad e índice) | 17 segundos |
+| `09` a `11` (documentos, embeddings y búsqueda) | 5 segundos |
+| `12_rag` (ocho respuestas del modelo) | 1 minuto y 40 segundos |
+| `tests.sql` | 3 segundos |
+
+Lo que más tarda es el RAG, y sobre todo la primera vez, porque Ollama tiene que cargar el modelo en memoria.

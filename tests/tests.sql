@@ -2,7 +2,8 @@
 -- Se ejecuta entero con F5 y al final sale una tabla con OK o FALLO por prueba.
 -- Todas las pruebas que tocan datos se hacen dentro de una transaccion que se
 -- deshace, asi que se pueden repetir sin ensuciar la base de datos.
--- Se va ampliando con cada fase del proyecto.
+-- Se va ampliando con cada fase del proyecto. Las de las fases 3 y 4 llaman al
+-- modelo de embeddings, asi que Ollama y nginx tienen que estar en marcha.
 
 USE MiniScada;
 GO
@@ -185,6 +186,45 @@ VALUES (N'El email de contacto sale tapado para el tecnico y completo para el ad
         CASE WHEN @EmailAdmin LIKE N'%@miniscada.example'
                   AND @EmailTecnico LIKE N'%XXXX.com'
              THEN 'OK' ELSE 'FALLO' END);
+GO
+
+-- FASE 3 Y 4: embeddings, busqueda semantica y RAG
+
+INSERT #Resultados (Prueba, Resultado)
+SELECT N'Los 10 documentos y las 11 alarmas tienen embedding',
+       CASE WHEN (SELECT COUNT(*) FROM dbo.Documentos WHERE Embedding IS NOT NULL) = 10
+             AND (SELECT COUNT(*) FROM dbo.Alarmas WHERE Embedding IS NOT NULL) = 11
+            THEN 'OK' ELSE 'FALLO' END;
+
+INSERT #Resultados (Prueba, Resultado)
+SELECT N'Existen los procedimientos de busqueda semantica y de RAG',
+       CASE WHEN (SELECT COUNT(*) FROM sys.procedures
+                  WHERE name IN ('usp_BuscarDocumentos', 'usp_BuscarAlarmasSimilares',
+                                 'usp_PreguntarRAG')) = 3
+            THEN 'OK' ELSE 'FALLO' END;
+GO
+
+-- La pregunta del sensor de CO2 plano debe devolver como primer documento su procedimiento
+DECLARE @Vector VECTOR(768) = AI_GENERATE_EMBEDDINGS(N'el sensor de CO2 marca siempre el mismo valor' USE MODEL ModeloEmbeddings);
+DECLARE @Primero NVARCHAR(200) = (SELECT TOP 1 Titulo FROM dbo.Documentos
+                                  ORDER BY VECTOR_DISTANCE('cosine', Embedding, @Vector));
+INSERT #Resultados (Prueba, Resultado)
+VALUES (N'La busqueda semantica de CO2 plano devuelve su procedimiento',
+        CASE WHEN @Primero = N'Procedimiento: sensor de CO2 con lecturas planas' THEN 'OK' ELSE 'FALLO' END);
+GO
+
+-- Para el servidor que se calienta, la alarma mas parecida es una de la sala de servidores
+DECLARE @Vector VECTOR(768) = AI_GENERATE_EMBEDDINGS(N'el servidor se calienta demasiado' USE MODEL ModeloEmbeddings);
+DECLARE @Zona NVARCHAR(100) = (SELECT TOP 1 z.Nombre
+                               FROM dbo.Alarmas a
+                               JOIN dbo.Sensores s ON s.SensorId = a.SensorId
+                               JOIN dbo.Dispositivos d ON d.DispositivoId = s.DispositivoId
+                               JOIN dbo.Zonas z ON z.ZonaId = d.ZonaId
+                               WHERE a.Embedding IS NOT NULL
+                               ORDER BY VECTOR_DISTANCE('cosine', a.Embedding, @Vector));
+INSERT #Resultados (Prueba, Resultado)
+VALUES (N'La alarma mas parecida a un servidor caliente es de la sala de servidores',
+        CASE WHEN @Zona LIKE N'%servidores%' THEN 'OK' ELSE 'FALLO' END);
 GO
 
 -- RESULTADO
