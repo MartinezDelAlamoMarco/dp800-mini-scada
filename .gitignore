@@ -1,0 +1,19 @@
+# Certificados, claves y secretos
+*.pem
+*.key
+*.pfx
+*.crt
+.env
+*.env
+secrets/
+
+# SQL Server y SSMS
+*.bak
+*.mdf
+*.ldf
+.vs/
+
+# Sistema y temporales
+Thumbs.db
+.DS_Store
+~$*
