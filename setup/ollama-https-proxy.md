@@ -8,8 +8,16 @@ Los certificados no están en el repositorio (el `.gitignore` excluye `*.pem`), 
 
 ```powershell
 ollama pull nomic-embed-text
-curl.exe http://localhost:11434/api/embed -d "{\"model\":\"nomic-embed-text\",\"input\":\"prueba\"}"
 ```
+
+Para probarlo, desde una carpeta que no sea la del repositorio (por ejemplo `C:\nginx`), guardo el cuerpo de la petición en un archivo y lo envío con curl directamente a Ollama:
+
+```powershell
+'{"model":"nomic-embed-text","input":"prueba"}' | Out-File -Encoding ascii body.json
+curl.exe http://localhost:11434/api/embed -H "Content-Type: application/json" -d "@body.json"
+```
+
+Uso el archivo porque PowerShell estropea las comillas dobles cuando se las pasa a `curl.exe`. En el Símbolo del sistema (cmd) sí se puede escribir el JSON en la misma línea.
 
 Si devuelve una lista larga de números, funciona. `nomic-embed-text` da vectores de 768 dimensiones, que es lo que luego se usa en `VECTOR(768)`.
 
@@ -38,8 +46,10 @@ Descargar nginx para Windows desde nginx.org, descomprimirlo en `C:\nginx` y cop
 ```powershell
 cd C:\nginx
 start nginx
-curl.exe --ssl-no-revoke https://localhost:11435/api/embed -d "{\"model\":\"nomic-embed-text\",\"input\":\"prueba\"}"
+curl.exe --ssl-no-revoke https://localhost:11435/api/embed -H "Content-Type: application/json" -d "@body.json"
 ```
+
+En PowerShell hay que escribir `.\nginx` en lugar de `nginx` (y `start .\nginx`). El `body.json` es el del paso 1, así que hay que lanzarlo desde la misma carpeta.
 
 `--ssl-no-revoke` hace falta porque los certificados de mkcert no llevan información de revocación y curl en Windows se queja. Para parar nginx: `nginx -s stop`.
 
