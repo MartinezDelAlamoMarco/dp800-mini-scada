@@ -200,6 +200,53 @@ Las consultas están en [database/05_consultas_avanzadas.sql](database/05_consul
 ![Resultado de las pruebas](docs/images/01_tests.png)
 
 
+## Seguridad
+
+La seguridad está en [database/06_seguridad.sql](database/06_seguridad.sql) y sus pruebas en [database/07_seguridad_pruebas.sql](database/07_seguridad_pruebas.sql). La idea es que cada persona vea solo lo que necesita para su trabajo.
+
+### Quién es quién
+
+Hay dos roles y cuatro usuarios. Los usuarios los he creado sin login (`CREATE USER ... WITHOUT LOGIN`), así que no se pueden usar para conectarse a SQL Server, solo para probar con `EXECUTE AS` desde mi sesión. De esa forma no hay ninguna contraseña en el proyecto.
+
+| Usuario | Rol | Zonas que ve | Emails de contacto | Tabla Lecturas |
+| --- | --- | --- | --- | --- |
+| admin_scada | rol_admin_scada | Todas | Completos | Acceso total |
+| tecnico_cpd | rol_tecnico | Sala de servidores | Enmascarados | Denegado, solo con la vista |
+| tecnico_oficinas | rol_tecnico | Recepcion y Oficinas | Enmascarados | Denegado, solo con la vista |
+| tecnico_almacen | rol_tecnico | Almacen | Enmascarados | Denegado, solo con la vista |
+
+Qué zonas tiene cada técnico lo dice la tabla `UsuariosZona`. Si mañana hay que darle otra zona a un técnico, se añade una fila y no hay que tocar ningún permiso.
+
+### Seguridad por filas
+
+Con Row-Level Security, SQL Server filtra las filas según quién consulta, sin que la consulta tenga que cambiar. Lo he aplicado a Zonas, Dispositivos, Sensores, Alarmas e Incidencias, y además hay un bloqueo para que un técnico no pueda crear alarmas ni incidencias en una zona que no es la suya. El administrador y yo (como `db_owner`) lo vemos todo.
+
+La misma consulta con los dos usuarios. El administrador ve las 4 zonas y las 11 alarmas:
+
+![RLS con el administrador](docs/images/02_rls_admin.png)
+
+Y el técnico de la sala de servidores ve solo su zona y sus 3 alarmas:
+
+![RLS con el técnico](docs/images/02_rls_tecnico.png)
+
+A la tabla Lecturas, que tiene más de 500.000 filas, no le he puesto seguridad por filas, para no añadir una comprobación a cada fila en cada consulta. En su lugar, el técnico no puede leerla directamente (`DENY`) y consulta las lecturas con la vista `vw_LecturasVisibles`, que hereda la seguridad de la tabla Sensores y por eso solo le deja ver las de sus sensores. Es una decisión que tomé por el rendimiento, y a cambio la seguridad de esta tabla depende de que nadie le dé permisos directos.
+
+### Enmascarado de datos
+
+El email de contacto de cada zona está enmascarado con Dynamic Data Masking. El administrador, que tiene el permiso `UNMASK`, lo ve completo, y los técnicos lo ven tapado (solo se ve la primera letra):
+
+![Enmascarado del email](docs/images/02_ddm.png)
+
+### Permisos mínimos
+
+El técnico tiene solo lo necesario para su trabajo: puede leer las alarmas, incidencias, sensores y manuales de sus zonas, y registrar o cerrar alarmas con los dos procedimientos. No puede borrar alarmas ni incidencias, ni modificar zonas, dispositivos o sensores, ni tocar la tabla Lecturas. Cada uno de esos permisos está dado con `GRANT` o quitado con `DENY` en el script.
+
+Probé qué pasa cuando el técnico de la sala de servidores intenta lo que no debe, dentro de una transacción que se deshace:
+
+![Intentos denegados](docs/images/02_deny.png)
+
+El error 229 es "permiso denegado". Crear una alarma en una zona ajena da el error 50001 ("el sensor no existe"), porque el técnico ni siquiera ve los sensores de otras zonas.
+
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
@@ -227,9 +274,6 @@ Los certificados no están en el repositorio: cada uno tiene que generar los suy
 <!--
 SECCIONES QUE VAS A AÑADIR AL README
 Cuando llegues a cada fase, copia el título, escribe la sección con tus palabras y borra el comentario correspondiente. Todas van debajo de "Cómo probarlo" o donde te parezca natural. Las guías de cada paso están en el documento de la guía.
-
-## Seguridad (Fase 2)
-Quién ve qué, en una tabla de usuario, permiso y resultado. Qué hace la seguridad por filas por zona, qué oculta el enmascarado de datos y por qué el técnico tiene solo lo necesario. Capturas: 02_rls_admin.png, 02_rls_tecnico.png, 02_ddm.png y 02_deny.png.
 
 ## Optimización de una consulta (Fase 2)
 Qué consulta elegiste y por qué, cómo era el plan antes (tipo de acceso, logical reads, tiempo), qué índice creaste y cómo quedó después. Explica por qué mejora, o por qué no mejora tanto. Capturas: 02_plan_antes.png y 02_plan_despues.png.

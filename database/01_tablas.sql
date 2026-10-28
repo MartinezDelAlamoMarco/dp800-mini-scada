@@ -7,6 +7,17 @@ GO
 USE MiniScada;
 GO
 
+-- Si ya se ejecuto 06_seguridad.sql, primero hay que quitar la politica y las
+-- funciones de seguridad, porque dependen de las tablas y impiden borrarlas.
+IF OBJECT_ID('Seguridad.PoliticaZonas', 'SP') IS NOT NULL
+    DROP SECURITY POLICY Seguridad.PoliticaZonas;
+GO
+IF OBJECT_ID('Seguridad.fn_AlarmaPermitida') IS NOT NULL DROP FUNCTION Seguridad.fn_AlarmaPermitida;
+IF OBJECT_ID('Seguridad.fn_SensorPermitido') IS NOT NULL DROP FUNCTION Seguridad.fn_SensorPermitido;
+IF OBJECT_ID('Seguridad.fn_DispositivoPermitido') IS NOT NULL DROP FUNCTION Seguridad.fn_DispositivoPermitido;
+IF OBJECT_ID('Seguridad.fn_ZonaPermitida') IS NOT NULL DROP FUNCTION Seguridad.fn_ZonaPermitida;
+GO
+
 -- Borrado en orden inverso a las dependencias
 DROP TABLE IF EXISTS dbo.Incidencias;
 DROP TABLE IF EXISTS dbo.Alarmas;
