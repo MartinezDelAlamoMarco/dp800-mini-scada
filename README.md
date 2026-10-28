@@ -247,11 +247,74 @@ Probé qué pasa cuando el técnico de la sala de servidores intenta lo que no d
 
 El error 229 es "permiso denegado". Crear una alarma en una zona ajena da el error 50001 ("el sensor no existe"), porque el técnico ni siquiera ve los sensores de otras zonas.
 
+## Optimización de una consulta
+
+El script es [database/08_optimizacion.sql](database/08_optimizacion.sql). Se ejecuta bloque a bloque y se puede repetir, porque lo primero que hace es borrar el índice si existe.
+
+### La consulta
+
+Elegí la que más se parece a lo que haría un técnico en el día a día: la media de CO2 de la oficina 1 durante una semana (del 1 al 8 de agosto).
+
+```sql
+SELECT AVG(Valor) AS MediaCO2, COUNT(*) AS Lecturas
+FROM dbo.Lecturas
+WHERE SensorId = @SensorId AND FechaHora >= @Desde AND FechaHora < @Hasta;
+```
+
+Devuelve 2.016 lecturas (288 al día durante 7 días) y una media de 619,98 ppm. El problema es que Lecturas tiene más de 500.000 filas y solo una clave primaria, por `LecturaId`. Ahí no sirve de nada buscar por sensor y fecha.
+
+### Antes: sin índice
+
+SQL Server no tiene otra opción que recorrer toda la tabla. El plan es un `Clustered Index Scan` que se lleva el 98 % del coste, y hasta me avisa de que falta un índice (con un impacto estimado del 99 %):
+
+![Plan antes](docs/images/02_plan_antes.png)
+
+Medido con `SET STATISTICS IO, TIME ON` y vaciando antes la caché (`DBCC DROPCLEANBUFFERS`) para que las dos mediciones partan igual:
+
+![Lecturas antes](docs/images/02_lecturas_antes.png)
+
+Son 15.771 lecturas lógicas (páginas leídas) y SQL Server tiene que usar varios hilos en paralelo para sacarlo. Con la caché fría tarda 241 ms, y con la caché caliente 54 ms pero con 233 ms de CPU, porque trabajan varios hilos a la vez.
+
+### El índice
+
+```sql
+CREATE NONCLUSTERED INDEX IX_Lecturas_Sensor_Fecha
+ON dbo.Lecturas (SensorId, FechaHora)
+INCLUDE (Valor);
+```
+
+El orden de las columnas importa: primero `SensorId`, que se compara con igualdad, y después `FechaHora`, que es el rango. Así SQL Server va directo al trozo del índice que es de ese sensor y de esa semana. `Valor` va con `INCLUDE` porque es lo único que necesita para calcular la media, y así no tiene que volver a la tabla a buscarlo (es un índice "cubriente").
+
+### Después: con índice
+
+Ahora el plan es un `Index Seek` sobre el nuevo índice:
+
+![Plan después](docs/images/02_plan_despues.png)
+
+Los operadores `Constant Scan` y `Intervalo de mezcla` que aparecen a su lado no cuestan nada (0 %), son la forma que tiene SQL Server de preparar el rango de fechas. Las lecturas:
+
+![Lecturas después](docs/images/02_lecturas_despues.png)
+
+| | Sin índice | Con índice |
+| --- | --- | --- |
+| Operador | Clustered Index Scan | Index Seek |
+| Lecturas lógicas | 15.771 | 13 |
+| Tiempo con caché fría | 241 ms | 4 ms |
+| Tiempo con caché caliente | 54 ms (233 ms de CPU) | 3 ms (0 ms de CPU) |
+
+Lee unas 1.200 veces menos páginas. En tiempo la diferencia es menor (de 241 ms a 4 ms con la caché fría), porque con solo 500.000 filas, en mi equipo hasta recorrer la tabla entera es bastante rápido. Pero la tabla crece cada 5 minutos por cada sensor y las lecturas lógicas crecerían con ella, mientras que las del índice casi no cambian.
+
+### Lo que cuesta el índice
+
+Un índice no es gratis. Este ocupa unos 16,7 MB, frente a los 117 MB de la tabla, y cada lectura nueva que llega tiene que escribirse también en él. Para un sistema como este, que casi solo inserta lecturas y las consulta por sensor y rango de fechas, me compensa. Si la tabla recibiera muchísimas escrituras y casi nunca se consultara por sensor y fecha, no lo crearía.
+
+Un detalle: en la captura del plan escribí el id del sensor (11) directamente en la consulta en lugar de usar variables, para que el plan saliera solo y se leyera bien. Con variables y `OPTION (RECOMPILE)`, que es lo que hace el script, el plan es el mismo.
+
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
 - [x] Diseño de la base de datos y T-SQL
-- [ ] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
+- [x] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
 - [ ] Embeddings y búsqueda semántica
 - [ ] RAG con modelo local
 - [ ] Documentar el uso de IA durante el desarrollo
@@ -274,9 +337,6 @@ Los certificados no están en el repositorio: cada uno tiene que generar los suy
 <!--
 SECCIONES QUE VAS A AÑADIR AL README
 Cuando llegues a cada fase, copia el título, escribe la sección con tus palabras y borra el comentario correspondiente. Todas van debajo de "Cómo probarlo" o donde te parezca natural. Las guías de cada paso están en el documento de la guía.
-
-## Optimización de una consulta (Fase 2)
-Qué consulta elegiste y por qué, cómo era el plan antes (tipo de acceso, logical reads, tiempo), qué índice creaste y cómo quedó después. Explica por qué mejora, o por qué no mejora tanto. Capturas: 02_plan_antes.png y 02_plan_despues.png.
 
 ## Embeddings (Fase 3)
 El enunciado pide cinco cosas: qué modelo usas, qué columnas se convierten en vector, qué dimensión tiene, cómo se generan y cómo se guardan en SQL Server. Cuéntalo con tus palabras. Captura: 03_embeddings.png.
