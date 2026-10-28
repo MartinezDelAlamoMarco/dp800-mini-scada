@@ -195,7 +195,7 @@ Las consultas están en [database/05_consultas_avanzadas.sql](database/05_consul
 
 ### Pruebas
 
-[tests/tests.sql](tests/tests.sql) comprueba de una vez que todo lo anterior está en su sitio: las 8 tablas, las columnas de tipo vector, la función, las vistas, los procedimientos y el trigger, que hay más de 500.000 lecturas, que el `CHECK` rechaza un rango al revés, que el procedimiento da error con un sensor que no existe y que el trigger cierra la alarma. Al final sale una tabla con OK o FALLO por cada prueba. Las que tocan datos se hacen dentro de una transacción que se deshace, y lo iré ampliando con cada fase.
+[tests/tests.sql](tests/tests.sql) comprueba de una vez que todo lo anterior está en su sitio: las 8 tablas, las columnas de tipo vector, la función, las vistas, los procedimientos y el trigger, que hay más de 500.000 lecturas, que el `CHECK` rechaza un rango al revés, que el procedimiento da error con un sensor que no existe y que el trigger cierra la alarma. Con la seguridad y la optimización añade que la política por filas está activa, que el administrador ve 11 alarmas y el técnico de la sala de servidores 3, que este último no puede leer la tabla `Lecturas`, que el email sale tapado para el técnico y que existe el índice. Al final sale una tabla con OK o FALLO por cada prueba. Las que tocan datos se hacen dentro de una transacción que se deshace, y lo iré ampliando con cada fase (ahora son 14 pruebas).
 
 ![Resultado de las pruebas](docs/images/01_tests.png)
 
