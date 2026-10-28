@@ -136,6 +136,40 @@ Después meto 11 anomalías a propósito, cada una con su alarma y, casi todas, 
 Las alarmas y sus incidencias las escribí con un lenguaje natural y con casos parecidos entre sí, para que más adelante la búsqueda por significado tenga algo que encontrar.
 
 
+## T-SQL: función, vistas, procedimientos y trigger
+
+Encima de las tablas he creado una función, dos vistas, dos procedimientos y un trigger. Los scripts están en [database/03_vistas_funcion.sql](database/03_vistas_funcion.sql) y [database/04_procedimientos_trigger.sql](database/04_procedimientos_trigger.sql).
+
+### Función y vistas
+
+La función `fn_EstadoValor` recibe un valor y el rango normal de un sensor y dice si está bajo, normal o alto. La uso dentro de la primera vista.
+
+- `vw_UltimaLectura` enseña la última lectura de cada sensor con su zona y si está dentro de su rango. Es lo que miraría un operador para saber cómo está todo ahora mismo.
+- `vw_AlarmasConIncidencia` junta cada alarma con su zona, su sensor y su incidencia, con los minutos que se tardó en resolver. No incluye la columna del embedding, porque no sirve para leerla. Las alarmas sin incidencia aparecen con valores vacíos.
+
+![Las dos vistas](docs/images/01_vistas.png)
+
+### Procedimientos
+
+Los he llamado `usp_` y no `sp_`, porque `sp_` está reservado para los procedimientos del sistema y SQL Server los busca primero en la base de datos `master`.
+
+- `usp_RegistrarAlarma` crea una alarma nueva y devuelve su identificador. Comprueba que el sensor existe y que la severidad es una de las permitidas, y si no, da un error con un mensaje claro.
+- `usp_CerrarIncidencia` cierra la incidencia de una alarma. Si la alarma ya tenía una incidencia abierta la completa, y si no tenía, crea una ya cerrada.
+
+Los dos usan parámetros y no construyen SQL con texto, así que no se pueden aprovechar para inyectar SQL.
+
+![Errores controlados por el procedimiento](docs/images/01_procedimientos.png)
+
+### Trigger
+
+El trigger `trg_Incidencias_EstadoAlarma` actualiza solo el estado de la alarma cuando cambia su incidencia: si se abre una incidencia, la alarma pasa a "en curso", y si se cierra, pasa a "cerrada". Así no depende de que cada programa o usuario se acuerde de cambiar el estado. Está hecho para funcionar también cuando se tocan varias filas a la vez.
+
+La prueba la hago dentro de una transacción que luego deshago, para no cambiar los datos. En la captura se ve cómo la misma alarma pasa de abierta a en curso y a cerrada:
+
+![Ciclo de una alarma con el trigger](docs/images/01_trigger.png)
+
+<!-- FASE 1 (consultas): cuando hagamos las consultas avanzadas con CTE, funciones de ventana y JSON, cuenta aqui que consulta es cada una y para que sirve. -->
+
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
