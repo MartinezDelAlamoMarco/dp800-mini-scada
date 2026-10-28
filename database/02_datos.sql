@@ -3,9 +3,9 @@
 -- un par de minutos, segun el equipo. Se puede repetir: borra los datos de las
 -- tablas (menos Documentos, que se carga en otro script) y los vuelve a crear.
 --
--- Los datos son siempre los mismos: el "ruido" de las lecturas sale de una
--- funcion hash y no de numeros aleatorios, asi que cualquiera que lo ejecute
--- obtiene exactamente lo mismo.
+-- Los datos son siempre los mismos: el "ruido" de las lecturas sale de un hash
+-- MD5 del sensor y del numero de lectura, y no de numeros aleatorios, asi que
+-- cualquiera que lo ejecute obtiene exactamente lo mismo.
 --
 -- Lecturas: 18 sensores, una lectura cada 5 minutos durante 100 dias
 -- (del 20 de junio al 27 de septiembre de 2026), unas 518.000 filas.
@@ -21,6 +21,23 @@ DELETE FROM dbo.Sensores;
 DELETE FROM dbo.Dispositivos;
 DELETE FROM dbo.UsuariosZona;
 DELETE FROM dbo.Zonas;
+GO
+
+-- Reinicia los numeros de identidad para que cada ejecucion empiece en 1 y los
+-- identificadores salgan siempre iguales. Solo se reinician las tablas que ya
+-- han tenido filas (en una tabla nueva, RESEED 0 haria empezar en 0).
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Incidencias') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Incidencias', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Alarmas') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Alarmas', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Lecturas') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Lecturas', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Sensores') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Sensores', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Dispositivos') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Dispositivos', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.Zonas') AND last_value IS NOT NULL)
+    DBCC CHECKIDENT ('dbo.Zonas', RESEED, 0);
 GO
 
 -- Zonas
@@ -114,7 +131,7 @@ SELECT p.SensorId,
        DATEADD(MINUTE, g.value * 5, @Inicio),
        CAST(p.Base
             + p.Amplitud * SIN(2 * PI() * (((g.value * 5) % 1440) / 60.0 - 9) / 24.0)
-            + p.Ruido * (ABS(CHECKSUM(p.SensorId, g.value) % 2001) / 1000.0 - 1.0)
+            + p.Ruido * (ABS(CAST(SUBSTRING(HASHBYTES('MD5', CONCAT(p.SensorId, '-', g.value)), 1, 4) AS INT) % 2001) / 1000.0 - 1.0)
             AS DECIMAL(10,2))
 FROM #Perfil p
 CROSS JOIN GENERATE_SERIES(0, 28799) AS g
@@ -225,8 +242,8 @@ GO
 UPDATE dbo.Lecturas
 SET PayloadJson = CONCAT('{"sensor":', SensorId,
                          ',"valor":', CONVERT(varchar(20), Valor),
-                         ',"bateria":', 60 + ABS(CHECKSUM(LecturaId) % 41),
-                         ',"rssi":', -40 - ABS(CHECKSUM(LecturaId, 7) % 41),
+                         ',"bateria":', 60 + ABS(CAST(SUBSTRING(HASHBYTES('MD5', CONCAT('b', LecturaId)), 1, 4) AS INT) % 41),
+                         ',"rssi":', -40 - ABS(CAST(SUBSTRING(HASHBYTES('MD5', CONCAT('r', LecturaId)), 1, 4) AS INT) % 41),
                          '}');
 GO
 

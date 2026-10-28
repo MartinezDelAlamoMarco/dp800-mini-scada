@@ -117,7 +117,7 @@ Para que no entren datos inválidos uso claves foráneas y restricciones `CHECK`
 
 ### Datos simulados
 
-Los datos los genera [database/02_datos.sql](database/02_datos.sql), que se ejecuta después de crear las tablas. Tarda unos 15 segundos en mi equipo y se puede repetir, porque borra y vuelve a crear los datos.
+Los datos los genera [database/02_datos.sql](database/02_datos.sql), que se ejecuta después de crear las tablas. Tarda menos de un minuto en mi equipo y se puede repetir, porque borra los datos, reinicia los contadores y los vuelve a crear, así que los identificadores salen siempre iguales.
 
 Hay 4 zonas, 8 dispositivos y 18 sensores. De cada sensor genero una lectura cada 5 minutos durante 100 días, del 20 de junio al 27 de septiembre de 2026, y eso da unas 518.000 lecturas. Cada valor sigue un ciclo diario (por ejemplo, más CO2 y más temperatura por la tarde en las oficinas) con una pequeña variación. Esa variación no sale de números aleatorios sino de una función hash, así que cualquiera que ejecute el script obtiene exactamente los mismos datos que yo.
 
@@ -168,12 +168,42 @@ La prueba la hago dentro de una transacción que luego deshago, para no cambiar 
 
 ![Ciclo de una alarma con el trigger](docs/images/01_trigger.png)
 
-<!-- FASE 1 (consultas): cuando hagamos las consultas avanzadas con CTE, funciones de ventana y JSON, cuenta aqui que consulta es cada una y para que sirve. -->
+### Consultas avanzadas
+
+Las consultas están en [database/05_consultas_avanzadas.sql](database/05_consultas_avanzadas.sql). Son solo de lectura y cada una responde a una pregunta del sistema.
+
+**CTE.** Una expresión de tabla común sirve para resumir primero los datos y luego filtrar sobre el resumen.
+
+- La primera resume las lecturas por sensor y día, y enseña los días en los que algún sensor se salió de su rango normal. Salen exactamente los días en que metí anomalías.
+- La segunda busca sensores "planos": agrupa las lecturas por hora y se queda con las horas en las que las 12 lecturas valen lo mismo (desviación cero). Encuentra los dos sensores de CO2 que se quedaron fijos, algo que mirando solo el rango no se vería, porque su valor era normal.
+
+![Consultas con CTE](docs/images/01_cte.png)
+
+**Funciones de ventana.** Permiten calcular sobre un grupo de filas sin juntarlas en una sola.
+
+- La primera da a cada alarma su puesto dentro de su zona según lo que tardó en resolverse (`RANK`) y cuántas alarmas lleva acumuladas la zona. Las alarmas sin resolver quedan en último lugar.
+- La segunda calcula la media móvil de la última hora de la temperatura de la sala de servidores el día del fallo de refrigeración. Se ve cómo la media sube con retraso respecto al valor real cuando la temperatura salta de 22 a 32 grados.
+
+![Funciones de ventana](docs/images/01_window.png)
+
+**JSON.** Cada lectura guarda el mensaje original del dispositivo, y se puede consultar sin haberlo separado en columnas.
+
+- `JSON_VALUE` saca la batería y la señal de cada mensaje, y con eso calculo la batería media y la señal mínima de cada dispositivo.
+- `OPENJSON` abre un mensaje y lo convierte en una fila por campo.
+
+![Consultas con JSON](docs/images/01_json.png)
+
+### Pruebas
+
+[tests/tests.sql](tests/tests.sql) comprueba de una vez que todo lo anterior está en su sitio: las 8 tablas, las columnas de tipo vector, la función, las vistas, los procedimientos y el trigger, que hay más de 500.000 lecturas, que el `CHECK` rechaza un rango al revés, que el procedimiento da error con un sensor que no existe y que el trigger cierra la alarma. Al final sale una tabla con OK o FALLO por cada prueba. Las que tocan datos se hacen dentro de una transacción que se deshace, y lo iré ampliando con cada fase.
+
+![Resultado de las pruebas](docs/images/01_tests.png)
+
 
 ## Cómo voy
 
 - [x] Comprobar que SQL Server puede generar embeddings con Ollama
-- [ ] Diseño de la base de datos y T-SQL
+- [x] Diseño de la base de datos y T-SQL
 - [ ] Seguridad (Row-Level Security, Dynamic Data Masking) y optimización de una consulta
 - [ ] Embeddings y búsqueda semántica
 - [ ] RAG con modelo local
