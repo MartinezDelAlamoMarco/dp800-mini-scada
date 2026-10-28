@@ -115,7 +115,26 @@ Para que no entren datos inválidos uso claves foráneas y restricciones `CHECK`
 - El campo `PayloadJson` de Lecturas tiene que ser un JSON válido.
 - Dentro de una zona no puede haber dos dispositivos con el mismo nombre, y dentro de un dispositivo tampoco dos sensores con el mismo nombre.
 
-<!-- FASE 1 (datos): cuando hagamos el script de datos, cuenta aqui como simulas las lecturas y que anomalias metes a proposito. -->
+### Datos simulados
+
+Los datos los genera [database/02_datos.sql](database/02_datos.sql), que se ejecuta después de crear las tablas. Tarda unos 15 segundos en mi equipo y se puede repetir, porque borra y vuelve a crear los datos.
+
+Hay 4 zonas, 8 dispositivos y 18 sensores. De cada sensor genero una lectura cada 5 minutos durante 100 días, del 20 de junio al 27 de septiembre de 2026, y eso da unas 518.000 lecturas. Cada valor sigue un ciclo diario (por ejemplo, más CO2 y más temperatura por la tarde en las oficinas) con una pequeña variación. Esa variación no sale de números aleatorios sino de una función hash, así que cualquiera que ejecute el script obtiene exactamente los mismos datos que yo.
+
+![Filas de cada tabla](docs/images/01_recuento_filas.png)
+
+Después meto 11 anomalías a propósito, cada una con su alarma y, casi todas, con su incidencia donde se cuenta la causa y la solución:
+
+- Dos sensores de CO2 que se quedan en un valor fijo durante horas. El valor está dentro del rango normal, lo raro es que no se mueve, así que no se detecta mirando solo el rango.
+- Dos subidas de temperatura en la sala de servidores, una por un fallo de refrigeración y otra tras un corte de luz.
+- Humedad muy alta en el almacén por una fuga de agua.
+- Caída de presión y de caudal en la bomba por perder el cebado.
+- Consumo eléctrico doble en la sala de servidores de madrugada.
+- Cinco horas sin lecturas en recepción por perder la conexión.
+- Tres anomalías más cuyas alarmas siguen abiertas o en curso: temperatura baja en el almacén, temperatura alta en una oficina y consumo alto en la otra.
+
+Las alarmas y sus incidencias las escribí con un lenguaje natural y con casos parecidos entre sí, para que más adelante la búsqueda por significado tenga algo que encontrar.
+
 
 ## Cómo voy
 
