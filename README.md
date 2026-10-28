@@ -370,6 +370,13 @@ RAG quiere decir que el modelo no contesta de memoria: primero busco en la base 
 
 La generación no se puede hacer con `CREATE EXTERNAL MODEL`, porque SQL Server 2025 solo admite modelos externos de tipo embeddings. Por eso la parte de generar texto va por REST.
 
+**Qué hace SQL Server y qué hace el modelo.** Son dos cosas distintas y el RAG las junta:
+
+- **SQL Server** guarda los manuales y sus vectores, y es quien busca: compara la pregunta con los documentos (`VECTOR_DISTANCE`) y decide cuáles se parecen más. También monta el contexto. Sabe qué dice mi documentación, pero no redacta.
+- **El modelo de lenguaje (Llama)** solo redacta la respuesta con el contexto que recibe. No tiene acceso a mi base de datos ni sabe nada de mi instalación: lo que sabe de memoria es genérico, y por eso sin documentos se inventa plazos.
+
+Dicho en una línea: SQL Server + búsqueda vectorial + contexto + modelo local = RAG.
+
 **Modelo.** Uso `Llama-3.2-3B-Instruct` cuantizado a Q4_K_M (unos 1,9 GB). Quería uno pequeño que funcione en mi portátil sin GPU y que sepa español. Lo normal era `ollama pull llama3.2:3b`, pero a mí me fallaba la descarga (mi red no llegaba al CDN de Ollama), así que lo bajé de Hugging Face con `ollama pull hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M`, que es el mismo modelo. Pongo temperatura 0 y `seed` 42 para que las respuestas se parezcan lo más posible de una ejecución a otra. Además tuve que subir `proxy_read_timeout` a 300 s en nginx (está en `setup/nginx.conf`), porque con los 60 s por defecto el proxy cortaba la llamada antes de que el modelo acabara. El script entero (ocho respuestas) tarda algo más de un minuto, y la primera vez bastante más porque Ollama tiene que cargar el modelo.
 
 **Con y sin RAG.** El script hace las mismas cuatro preguntas dos veces, una sin documentos (`sin RAG`) y otra con ellos (`con RAG`). Las respuestas salen troceadas en líneas de 110 caracteres para que quepan en la rejilla de SSMS (a veces el corte cae en mitad de una palabra).
