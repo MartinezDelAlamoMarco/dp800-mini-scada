@@ -442,7 +442,7 @@ Lo que mejoraría:
 
 ## Uso de IA durante el desarrollo
 
-He usado Claude como guía durante todo el proyecto: para ordenar las fases, para que me escribiera los scripts de cada una (tablas, generador de datos, procedimientos, seguridad, embeddings, RAG), para redactar los diez documentos de prueba y para resolver los errores que me fueron saliendo. Todo lo que me dio lo probé en mi SQL Server antes de aceptarlo, y varias veces tuvo que corregirse (los fallos de `IDENTITY` y de `GENERATE_SERIES` que cuento arriba, el modelo que no se descargaba, el tiempo de espera de nginx). Por cada parte importante anoté mis dudas, qué acepté, qué hubo que corregir y cómo lo verifiqué.
+He usado Claude como guía durante todo el proyecto: para ordenar las fases, para que me escribiera los scripts de cada una (tablas, generador de datos, procedimientos, seguridad, embeddings, RAG), para redactar los diez documentos de prueba y para resolver los errores que me fueron saliendo. Todo lo que me dio lo probé en mi SQL Server antes de aceptarlo, y varias veces tuvo que corregirse (los fallos de `IDENTITY` y de `GENERATE_SERIES` que cuento arriba, el modelo que no se descargaba, el tiempo de espera de nginx). Por cada parte importante anoté mis dudas, qué acepté, qué hubo que corregir y cómo lo verifiqué. Las diez fichas completas están en [docs/uso-de-ia.md](docs/uso-de-ia.md).
 
 ## Instalación paso a paso (desde cero)
 
